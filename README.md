@@ -368,6 +368,46 @@ clean `log N`.
 
 ---
 
+---
+
+# M3 — a causal char-level LM trained by PC
+
+The final ladder step: a real autoregressive model. One **causal** linear-attention
+layer (position i sees only j ≤ i), an embedding, sinusoidal positions, and a
+softmax cross-entropy head. Code: [causal_linear_attn.py](pc_attention/causal_linear_attn.py),
+[char_lm.py](pc_attention/char_lm.py),
+[run_experiment_m3.py](pc_attention/run_experiment_m3.py). Run:
+
+```bash
+./.venv/Scripts/python.exe tests/test_gradients_causal.py
+./.venv/Scripts/python.exe pc_attention/run_experiment_m3.py     # ~20 s
+```
+
+Causal linear attention makes the two accumulators *running* (prefix) sums; the
+gradient is the mirror image, a *suffix* sum (reverse scan) — a key at position j
+feeds every query i ≥ j. The local PC rule matches autograd to ~1e-15
+(`tests/test_gradients_causal.py`), and causality is checked directly (perturbing a
+future token leaves past outputs untouched).
+
+Every parameter has an exact local rule: the attention weights from the causal PC
+gradient, the output head from a Hebbian outer product, the embedding from the
+attention layer's one-layer input transpose (local feedback), and the softmax-CE
+error is just `p - y`. So the whole model's PC gradient equals its backprop
+gradient (worst dev **2.9e-15** across all five parameter tensors).
+
+![M3 training](results/m3_training.png)
+
+Trained from the same init on the same data with the same optimizer, **PC and
+backprop produce the same curve** — max loss gap over 600 steps = **3.1e-15**. The
+LM learns (loss 3.48 → 0.03, next-char accuracy 0.02 → 0.99) and the PC-trained
+model reproduces the text:
+
+```
+the quick brown fox jumps over the lazy dog. the quick brown fox
+```
+
+---
+
 # Overall status
 
 | Milestone | What | Result |
@@ -376,8 +416,17 @@ clean `log N`.
 | **M2** | depth L stack, fixed-prediction PC | PC = backprop at all (N,L) once inference converges; depth cost = inference latency; flat in N |
 | **Path A** | real softmax + `zeta` normalizer node | PC = softmax backprop to ~4e-15; locality budget 1 scalar; `delta` flat in N; `~1/gamma^2` |
 | **Path C** | cost of forcing locality | exact paths `b = 0` (free); naive local rule costs ~0.5 with sharpness-dependent N-trend |
+| **M3** | causal char-LM, PC vs backprop | PC = backprop to ~3e-15 across all params; identical loss curves; LM learns (acc 0.99) |
 
-Run everything: `tests/test_gradients.py`, `tests/test_gradients_A.py`, then
-`pc_attention/run_experiment{,_m2,_A,_C}.py`. Not yet done: M3 (char-level LM
-convergence). Derivations for Path B and Path A are in
-[derivations.md](derivations.md).
+The full ladder (M1–M3 + Paths A/C) is complete. Gates:
+`tests/test_gradients{,_A,_causal}.py`. Experiments:
+`pc_attention/run_experiment{,_m2,_A,_C,_m3}.py`. Derivations for Path B and Path A
+are in [derivations.md](derivations.md).
+
+**One-line takeaway.** Across linear and softmax attention, single-layer and deep,
+non-causal and causal, up to a real char-LM, predictive coding's *local* updates
+reproduce backprop **exactly** whenever the attention layer's global information is
+preserved (Path B's `(S,u)`, Path A's `c_i`) and inference is run to convergence.
+The only costs are an `O(1/beta)` or `O(1/gamma^2)` state-relaxation bias, an
+inference-latency penalty with depth, and — if you deliberately drop the global
+term — an order-1 misalignment. Sequence length `N` never hurts (`b ≈ 0`).
