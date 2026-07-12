@@ -26,8 +26,15 @@ WEIGHT_KEYS = ("W_Q", "W_K", "W_V")
 
 
 # ---- gradient alignment  delta = E[1 - cos] ---------------------------------
-def _cosine_per_example(a: Tensor, b: Tensor, eps: float = 1e-12) -> Tensor:
-    """Cosine similarity per example between two (B, ...) gradient tensors."""
+def _cosine_per_example(a: Tensor, b: Tensor, eps: float = 1e-30) -> Tensor:
+    """Cosine similarity per example between two (B, ...) gradient tensors.
+
+    The denominator guard is kept negligibly small (1e-30). Deep-layer gradients
+    can be genuinely tiny (vanishing gradients: ~1e-8, so the norm product is
+    ~1e-16), and a larger guard would swamp them and report a fake misalignment.
+    A gradient that is essentially zero has no direction, so cosine near 0 there is
+    the honest answer.
+    """
     B = a.shape[0]
     a = a.reshape(B, -1)
     b = b.reshape(B, -1)

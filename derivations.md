@@ -278,3 +278,119 @@ match `-beta E_S ?= dL/dS*` and `-beta E_u ?= dL/du*`.
 
 None of these change the Path-B claim; they are corrections to how the equations
 are *written*, folded into the implementation.
+
+---
+
+# PART A — Softmax attention with a normalizer state node (Path A)
+
+This is the derivation behind `pc_updates_A.py`. Path A keeps the *real* softmax
+(no feature-map surrogate) and promotes only the per-token normalizer to a state
+node, so the single global operation left is one scalar per token.
+
+## A.1 Forward and notation
+
+Per query `i`, key `j` (`d_k` = query/key dim, scale `tau = 1/sqrt(d_k)`):
+
+```
+s_ij   = tau * q_i . k_j
+E_ij   = exp(s_ij)
+zeta*_i = sum_j E_ij              (true normalizer)   ,   c_i = log zeta*_i  (true LSE)
+z_tilde_i = sum_j E_ij v_j        (un-normalized output)
+```
+
+Promote the normalizer to a state node. We store it in **log space** as
+`l_i` (= "log zeta_i"), which is where softmax's dynamic range lives:
+
+```
+z_i   = z_tilde_i * exp(-l_i) = sum_j b_ij v_j ,   b_ij := exp(s_ij - l_i)
+eps_i = x_i^out - z_i
+a_ij  := exp(s_ij - c_i)          (true softmax weights, sum_j a_ij = 1)
+```
+
+`b_ij` uses the **state** normalizer `l_i`; `a_ij` uses the **true** one `c_i`.
+They coincide when the state has relaxed to the truth (`l_i = c_i`).
+
+## A.2 Extended free energy
+
+```
+F_ext_A = F_pred + F_norm
+F_pred  = (1/2) sum_i || x_i^out - z_i ||^2
+F_norm  = (gamma/2) sum_i ( l_i - c_i )^2
+```
+
+`gamma` = precision pinning the state normalizer to the true LSE `c_i`. This is
+the divisive-normalization "pool" of PART V: the only non-local read is the scalar
+`c_i` per token.
+
+## A.3 State-node update (the log-normalizer)
+
+`z_i = z_tilde_i exp(-l_i)`, so `dz_i/dl_i = -z_i`.
+
+```
+dF_pred/dl_i = (-eps_i) . (-z_i) = eps_i . z_i
+dF_norm/dl_i = gamma ( l_i - c_i )
+dF/dl_i      = eps_i . z_i + gamma ( l_i - c_i )
+```
+
+Define the **normalizer error** `r_i := gamma ( l_i - c_i )`. At the inference
+fixed point `dF/dl_i = 0`:
+
+```
+r_i = - eps_i . z_i          (finite, gamma-independent -- like beta*E in Path B)
+```
+
+Relaxing `l_i` (init at `c_i`, step `lr ~ 1/gamma`) reaches this in a few steps,
+same reasoning as Path B §3.3.
+
+## A.4 Error at the logits, then the weights
+
+Everything factors through `s_ij`. With `l_i` held as a state (const w.r.t. `s`):
+
+```
+dz_i/ds_ij   = b_ij v_j                       => dF_pred/ds_ij = - b_ij (eps_i . v_j)
+dc_i/ds_ij   = a_ij                           => dF_norm/ds_ij = - r_i a_ij
+dF/ds_ij     = - b_ij (eps_i . v_j) - r_i a_ij
+```
+
+Chain `s_ij = tau q_i . k_j` and `v_j = W_V^T x_j` to the weights (outer products,
+`dF/dW = sum x (dF/d*)^T`):
+
+```
+dF/dq_i = tau * sum_j [ -b_ij (eps_i . v_j) - r_i a_ij ] k_j
+dF/dk_j = tau * sum_i [ -b_ij (eps_i . v_j) - r_i a_ij ] q_i
+dF/dv_j = - sum_i b_ij eps_i
+dF/dW_Q = sum_i x_i (dF/dq_i)^T,  dF/dW_K = sum_j x_j (dF/dk_j)^T,  dF/dW_V = sum_j x_j (dF/dv_j)^T
+```
+
+Reads per update: token-local `x, q, k, v, eps`, plus the **one shared per-token
+scalar** the normalizer carries (`c_i` via `a_ij`, or equivalently `r_i`). That is
+the **locality budget = 1** of PART IX.9.3, versus Path B's 2.
+
+## A.5 Equivalence to softmax backprop (the gate)
+
+Let `L = (1/2) sum_i ||x_i^out - z*_i||^2` with the *true* softmax output
+`z*_i = sum_j a_ij v_j` (this is `backprop_ref` for Path A). As `gamma -> inf` the
+state relaxes to `l_i = c_i`, so `b_ij -> a_ij`, `z_i -> z*_i`, and
+`r_i -> -(eps_i . z*_i)`. Substituting `r_i` into `dF/dq_i`:
+
+```
+dF/dq_i = -tau sum_j a_ij ( eps_i . (v_j - z*_i) ) k_j
+```
+
+which is exactly the softmax-attention backprop `dL/dq_i` (the softmax Jacobian is
+`dz*_i/ds_ij = a_ij (v_j - z*_i)`). `dF/dW_K`, `dF/dW_V` match the same way. So at
+the fixed point with `gamma -> inf`:
+
+```
+g_PC_A(W_Q) = g_BP(W_Q),  g_PC_A(W_K) = g_BP(W_K),  g_PC_A(W_V) = g_BP(W_V)
+```
+
+exactly (to `O(1/gamma)`). This is the Path A correctness gate.
+
+## A.6 What Path A does and does not buy (honest)
+
+Computing `c_i = log sum_n exp(s_in)` is still a sum over all keys -- Path A does
+**not** remove globality. It concentrates it into one scalar per token (the
+divisive-normalization pool), leaving every vector/matrix update Hebbian and
+local. Contrast the budgets: Path B = 2 shared *states* (S, u) but no softmax;
+Path A = 1 shared *scalar* per token (c_i) with the real softmax kept.
