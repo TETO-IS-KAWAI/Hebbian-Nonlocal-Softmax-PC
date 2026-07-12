@@ -104,13 +104,14 @@ def pc_gradients_A(
     gamma: float = 1e4, method: str = "relax",
     lr: Optional[float] = None, n_steps: int = 200, tol: float = 1e-9,
     mask: Optional[Tensor] = None, return_info: bool = False,
-    naive: bool = False,
+    naive: bool = False, alpha: float = 1.0,
 ):
     """Path A local PC gradients for W_Q, W_K, W_V (per example).
 
-    naive=True zeros the normalizer error r_i, i.e. drops the global redistribution
-    term (the softmax Jacobian's -z_i). That is the deliberately-too-local rule Path
-    C uses as a contrast; it should degrade as N grows. Only meaningful with
+    alpha scales the global redistribution term (the normalizer error r_i):
+    alpha=1 is the exact rule, alpha=0 drops it entirely (the naive, strictly-local
+    rule that no longer tracks backprop). naive=True is shorthand for alpha=0.
+    The in-between values trace the locality spectrum. Only meaningful with
     method="closed_form".
     """
     if method == "closed_form":
@@ -120,8 +121,7 @@ def pc_gradients_A(
         if mask is not None:
             eps = eps * mask.unsqueeze(-1)
         r = -(eps * z).sum(dim=-1)                    # r_i = -(eps_i . z_i)
-        if naive:
-            r = torch.zeros_like(r)                   # drop the global redistribution
+        r = (0.0 if naive else alpha) * r             # keep a fraction of the redistribution
         grads = _weight_grads(fwd, fwd.A, eps, r)
         info = RelaxInfoA(steps=0, res=0.0, converged=True)
     elif method == "relax":
