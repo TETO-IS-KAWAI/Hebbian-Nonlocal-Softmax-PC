@@ -8,8 +8,9 @@ Per query i:
     z*_i   = sum_j softmax_j(s_i.) v_j             (the usual attention output)
 
 The one genuinely global thing is the log-normalizer c_i = log sum_j exp(s_ij).
-Path A treats that scalar as the only non-local signal each token needs -- the
-"divisive normalization pool" of the spec. Everything else stays local.
+Path A treats that scalar as the only non-local signal each token needs -- a
+"divisive normalization pool," the same computation cortex is thought to perform.
+Everything else stays local.
 
 This module gives the plain forward and the autograd reference (true softmax
 loss). The state-node PC version lives in pc_updates_A.py. Both share this forward

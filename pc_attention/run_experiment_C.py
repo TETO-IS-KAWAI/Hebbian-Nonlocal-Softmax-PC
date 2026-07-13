@@ -1,9 +1,9 @@
 """Path C: quantify the cost of forcing locality.
 
 Path C doesn't build a new trainer; it measures how the PC-vs-backprop gap
-delta(N, L) scales, and tests the spec's conjecture
+delta(N, L) scales. A natural guess for how it worsens with depth and length is
     delta(N, L) ~ 1 - (1 - a)^L (1 - b log N)
-i.e. worsening with depth (a) and with sequence length (b log N).
+with a depth term (a) and a sequence-length term (b log N).
 
 We pull the three axes together:
 
@@ -18,7 +18,7 @@ We pull the three axes together:
 
 The interesting finding is that the naive rule's length dependence is not a fixed
 b log N: it flips sign with attention sharpness (diffuse attention -> cost shrinks
-with N; peaked attention -> cost grows with N), which refines the spec's guess.
+with N; peaked attention -> cost grows with N), refining the guess above.
 
 Outputs: results/pathC_delta_vs_N.png, results/pathC_summary.csv
 """

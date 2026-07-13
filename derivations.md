@@ -1,12 +1,11 @@
 # Derivations — Path B (linear attention) local update rules
 
 This file works through the analytic gradients of the extended free energy
-`F_ext` for Path B **by hand**, before they are implemented in
-`pc_attention/pc_updates.py`. The spec (SPEC_full.md, PART IV.B.4) gives `dF/dS`
-and `dF/dW_Q` but leaves `dF/du` as *"derive carefully"* and writes `dz_i/dq_i`
-in a dimensionally-loose shorthand. Both are worked out fully here, and the
-places where the spec's written form is sloppy/ambiguous are flagged
-explicitly (see **§7 Discrepancies with the spec**).
+`F_ext` for Path B by hand, before they are implemented in
+`pc_attention/pc_updates.py`. `dF/dS` and `dF/dW_Q` fall out fairly directly;
+`dF/du` and the `dz_i/dq_i` Jacobian take more care and are easy to get
+dimensionally wrong on a first pass, so both are worked out fully here, with the
+easy-to-miss steps flagged in section 7.
 
 Everything below is verified numerically against autograd in
 `tests/test_gradients.py`.
@@ -72,7 +71,7 @@ E_u = u - u*     in R^m
 
 ## 3. State-node gradients (inference / relaxation)
 
-### 3.1 dF/dS  (spec gives this; reproduced for completeness)
+### 3.1 dF/dS
 
 `z_i = (1/n_i) S^T phi(q_i)`, and `n_i` does **not** depend on `S`. Component form
 `z_i[a] = (1/n_i) sum_b S[b,a] phi(q_i)[b]`, so
@@ -81,12 +80,12 @@ E_u = u - u*     in R^m
 
 ```
 dF_pred/dS = - sum_i phi(q_i) eps_i^T / n_i          in R^{m×d_v}
-dF/dS      = - sum_i phi(q_i) eps_i^T / n_i  +  beta E_S      ✓ matches spec
+dF/dS      = - sum_i phi(q_i) eps_i^T / n_i  +  beta E_S
 ```
 
-Each term is a per-token outer product summed into a shared matrix — **local**.
+Each term is a per-token outer product summed into a shared matrix, so this is local.
 
-### 3.2 dF/du  (spec: "derive carefully")
+### 3.2 dF/du (the term that's easy to get wrong)
 
 Now `u` enters only through `n_i = u^T phi(q_i)`. Write `z_i = S^T phi(q_i) · n_i^{-1}`:
 
@@ -117,7 +116,7 @@ dF/du = + sum_i ( eps_i^T z_i / n_i ) phi(q_i)  +  beta E_u        in R^m
 **Sign note:** the `F_pred` part of `dF/du` is **+** (a positive multiple of
 `phi(q_i)`), in contrast to `dF/dS` which is **−**. The scalar
 `(eps_i^T z_i)/n_i` is per-token and only reads token-local quantities plus the
-shared `S,u` — **local**. Define `H := sum_i (eps_i^T z_i / n_i) phi(q_i)`.
+shared `S,u`, so it stays local. Define `H := sum_i (eps_i^T z_i / n_i) phi(q_i)`.
 
 ### 3.3 Inference fixed point (the key identity)
 
@@ -173,8 +172,8 @@ dF/dq_i = (dz_i/dq_i)^T (-eps_i) = -(1/n_i) phi'(q_i) ⊙ [ S eps_i - u (z_i^T e
 dF/dW_Q = sum_i x_i (dF/dq_i)^T                                      in R^{d×m}
 ```
 
-Equivalent to the spec's `dF/dW_Q = - sum_i x_i (dz_i/dq_i)^T eps_i` read as an
-outer product. Uses only `x_i, phi(q_i), phi'(q_i), S, u, eps_i` — **local**.
+Written as an outer product, `dF/dW_Q = - sum_i x_i ⊗ [(dz_i/dq_i)^T eps_i]`, using
+only `x_i, phi(q_i), phi'(q_i), S, u, eps_i`.
 
 ### 5.2 W_K
 
@@ -194,7 +193,7 @@ At the fixed point substitute `beta E_S = G_S`, `beta E_u = -H`:
 dF/dW_K = - sum_j x_j [ phi'(k_j) ⊙ ( G_S v_j - H ) ]^T
 ```
 
-`v_j = W_V^T x_j` is token-local; `G_S, H` are shared-state reads — **local**.
+`v_j = W_V^T x_j` is token-local, and `G_S, H` are just shared-state reads.
 
 ### 5.3 W_V
 
@@ -249,35 +248,29 @@ match `-beta E_S ?= dL/dS*` and `-beta E_u ?= dL/du*`.
 
 ---
 
-## 7. Discrepancies with the spec (flagged per kickoff ground rules)
+## 7. Notes on notation (the steps most likely to trip you up)
 
-1. **`dz_i/dq_i` in PART IV.B.4 is dimensionally loose.** The spec writes
-   `[ S^T phi'(q_i) (u^T phi(q_i)) - S^T phi(q_i) (u^T phi'(q_i)) ] / (u^T phi(q_i))^2`.
-   Taken literally, `S^T phi'(q_i)` treats the elementwise derivative vector
-   `phi'(q_i)` as if it slotted straight into the matrix product, and
-   `(u^T phi'(q_i))` reads as a scalar. The correct object needs
-   `diag(phi'(q_i))` (a Jacobian), giving §4:
-   `(1/n_i)[ S^T diag(phi'(q_i)) - z_i (phi'(q_i)⊙u)^T ]`. The spec's numerator,
-   read with `diag(·)` inserted and `S^T phi(q_i) = n_i z_i`, reduces to the same
-   thing — so it is *notation*, not a math error, but it is not literally
-   correct as written.
+1. **`dz_i/dq_i` needs a full Jacobian, not the elementwise derivative dropped
+   straight into a matrix product.** It's tempting to write something like
+   `S^T phi'(q_i)`, treating `phi'(q_i)` as if it could sit inside the matrix
+   product on its own. Since `phi` is elementwise, its Jacobian is the diagonal
+   matrix `diag(phi'(q_i))`, so the correct object is (§4):
+   `(1/n_i)[ S^T diag(phi'(q_i)) - z_i (phi'(q_i)⊙u)^T ]`. Any looser shorthand
+   that omits the `diag(·)` will look plausible but produce the wrong shape.
 
-2. **`dF/du` sign.** The spec omits the worked form. It is **positive**:
-   `+ sum_i (eps_i^T z_i / n_i) phi(q_i) + beta E_u` (§3.2), opposite in sign to
-   the `F_pred` part of `dF/dS`. Easy to get backwards.
+2. **`dF/du` carries a plus sign** on its prediction-error term:
+   `+ sum_i (eps_i^T z_i / n_i) phi(q_i) + beta E_u` (§3.2), opposite to the
+   minus on the equivalent term in `dF/dS`. Easy to get backwards by pattern
+   matching against `dF/dS`.
 
-3. **`dF/dW_Q = - sum_i x_i (dz_i/dq_i)^T eps_i` (spec)** mixes shapes: `x_i∈R^d`
-   and `(dz_i/dq_i)^T eps_i ∈ R^m`. It is only consistent read as an **outer
-   product** `x_i ⊗ [(dz_i/dq_i)^T eps_i]` (§5.1). Same for W_K, W_V.
+3. **`dF/dW_Q` (and W_K, W_V) are outer products**, not literal matrix products:
+   `x_i ⊗ [(dz_i/dq_i)^T eps_i]` (§5.1), where `x_i ∈ R^d` and the bracketed term
+   is in `R^m`. Writing it as a plain product mixes the shapes.
 
-4. **The `beta E_S`, `beta E_u` bookkeeping is implicit in the spec.** The spec's
-   `dF/dW_K` etc. are only local *because* the global backprop signal is carried
-   by the two shared residuals `beta E_S, beta E_u` (2 non-local reads = the
-   locality budget of 2). Worth stating explicitly: the "locality budget = 2"
-   claim (PART IX.9.3) corresponds exactly to these two shared reads.
-
-None of these change the Path-B claim; they are corrections to how the equations
-are *written*, folded into the implementation.
+4. **The locality claim rests entirely on `beta E_S` and `beta E_u`.** Every
+   per-token weight update is local *because* the only cross-token information
+   it needs is carried by these two shared residuals — that pair is what
+   README.md calls the "locality budget = 2."
 
 ---
 
@@ -362,9 +355,9 @@ dF/dv_j = - sum_i b_ij eps_i
 dF/dW_Q = sum_i x_i (dF/dq_i)^T,  dF/dW_K = sum_j x_j (dF/dk_j)^T,  dF/dW_V = sum_j x_j (dF/dv_j)^T
 ```
 
-Reads per update: token-local `x, q, k, v, eps`, plus the **one shared per-token
-scalar** the normalizer carries (`c_i` via `a_ij`, or equivalently `r_i`). That is
-the **locality budget = 1** of PART IX.9.3, versus Path B's 2.
+Reads per update: token-local `x, q, k, v, eps`, plus the one shared per-token
+scalar the normalizer carries (`c_i` via `a_ij`, or equivalently `r_i`). That is a
+locality budget of 1, versus Path B's 2.
 
 ## A.5 Equivalence to softmax backprop (the gate)
 

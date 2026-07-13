@@ -65,12 +65,13 @@ spirit and still equals backprop.
 
 ## Claim 5 (the cost of *less* locality)
 
-If the global term is thrown away — the naive rule that drops the softmax
-redistribution `-z_i` (Path A with the normalizer error `r_i = 0`) — the updates
-become strictly local (zero shared reads) but no longer track backprop:
-`delta` is order 0.1–0.6, and its sign in `N` depends on attention sharpness
-(shrinks for diffuse, grows for peaked). So the spec's `b log N` length penalty is
-real only when the normalizer is approximated, and even then is regime-dependent.
+If the global term is thrown away (the naive rule that drops the softmax
+redistribution `-z_i`, i.e. Path A with the normalizer error `r_i = 0`), the
+updates become strictly local (zero shared reads) but no longer track backprop.
+`delta` is order 0.1-0.6, and its sign in `N` depends on attention sharpness:
+it shrinks for diffuse attention and grows for peaked attention. A single
+`b log N` length penalty doesn't capture that; a length cost only shows up once
+the normalizer is approximated, and even then its direction is regime-dependent.
 
 *Check:* `run_experiment_C.py`; the `alpha`-scan in this folder's `run.py`
 interpolates continuously from naive (`alpha=0`) to exact (`alpha=1`).
