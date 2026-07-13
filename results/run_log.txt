@@ -1,0 +1,18 @@
+config: Ns=[4, 8, 16, 32, 64, 128, 256] d=16 m=32 beta=10000 phi=elu+1 delta_reps=5 train_steps=400 method=relax
+--------------------------------------------------------------------------------------------
+   N |            delta_masked (WQ/WK/WV) |             delta_dense (WQ/WK/WV) |      relax |     acc bp/pc | loc
+-----------------------------------------------------------------------------------------------------------------
+   4 |            2.0e-12/6.2e-13/5.6e-16 |            1.9e-11/2.1e-11/8.7e-15 |    3/9e-12 | 0.398/0.398 | 2ok
+   8 |           8.4e-14/9.0e-15/-1.2e-17 |            1.9e-12/2.0e-12/8.3e-16 |    3/8e-10 | 0.236/0.236 | 2ok
+  16 |           5.8e-15/1.4e-16/-3.1e-17 |            2.3e-13/1.7e-13/9.8e-17 |    2/2e-10 | 0.145/0.145 | 2ok
+  32 |           3.7e-16/1.5e-15/-2.0e-17 |            3.1e-14/1.6e-14/6.9e-18 |    2/4e-11 | 0.096/0.096 | 2ok
+  64 |           1.9e-17/1.9e-14/-8.3e-18 |            4.1e-15/1.7e-15/1.5e-17 |    2/7e-11 | 0.086/0.086 | 2ok
+ 128 |            2.4e-17/2.9e-13/1.1e-16 |           5.5e-16/4.6e-17/-2.2e-17 |    2/1e-10 | 0.051/0.051 | 2ok
+ 256 |           -3.5e-17/4.2e-12/1.6e-15 |           6.5e-17/3.4e-16/-3.5e-17 |    2/3e-10 | 0.064/0.064 | 2ok
+-----------------------------------------------------------------------------------------------------------------
+wrote C:\Users\MSI\Documents\GitHub\Hebbian-Nonlocal-Softmax-PC\results\delta_vs_N.csv
+wrote C:\Users\MSI\Documents\GitHub\Hebbian-Nonlocal-Softmax-PC\results\delta_vs_N.png
+wrote C:\Users\MSI\Documents\GitHub\Hebbian-Nonlocal-Softmax-PC\results\accuracy_vs_N.png
+
+headline: worst delta over all N/tensors  masked=4.17e-12  dense=2.13e-11
+Path B prediction is delta(N) ~ flat; see README for interpretation.

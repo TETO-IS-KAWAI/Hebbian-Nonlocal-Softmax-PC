@@ -1,0 +1,22 @@
+config: Ns=[4, 8, 16, 32, 64, 128, 256] d=16 d_k=16 batch=16 gamma=10000 reps=4
+
+   N | Path A (gamma->inf) | Path A (finite) | Path B (gamma->inf)
+     4 |           9.83e-18 |        2.26e-07 |          -1.68e-17
+     8 |          -2.02e-17 |        2.22e-07 |          -3.47e-18
+    16 |          -2.60e-17 |        1.66e-07 |          -1.45e-17
+    32 |          -2.66e-17 |        1.89e-07 |          -1.27e-17
+    64 |          -4.05e-18 |        1.54e-07 |           4.05e-18
+   128 |          -8.67e-18 |        1.13e-07 |          -4.05e-18
+   256 |          -2.43e-17 |        8.33e-08 |          -4.63e-18
+
+gamma-scan: delta vs gamma (finite-gamma relaxation)
+   N=   8: g=1e+01:5.8e-02  g=1e+02:1.3e-03  g=1e+03:2.1e-05  g=1e+04:2.2e-07  g=1e+05:2.2e-09  g=1e+06:2.2e-11
+   N=  32: g=1e+01:3.2e-02  g=1e+02:1.1e-03  g=1e+03:1.7e-05  g=1e+04:1.9e-07  g=1e+05:1.9e-09  g=1e+06:1.9e-11
+   N= 128: g=1e+01:2.5e-02  g=1e+02:6.4e-04  g=1e+03:1.0e-05  g=1e+04:1.1e-07  g=1e+05:1.1e-09  g=1e+06:1.1e-11
+
+wrote C:\Users\MSI\Documents\GitHub\Hebbian-Nonlocal-Softmax-PC\results\pathA_delta.csv
+wrote C:\Users\MSI\Documents\GitHub\Hebbian-Nonlocal-Softmax-PC\results\pathA_delta_vs_N.png
+wrote C:\Users\MSI\Documents\GitHub\Hebbian-Nonlocal-Softmax-PC\results\pathA_gamma_scan.png
+
+Path A closed-form worst delta over N: 9.83e-18  (softmax PC == softmax backprop, flat in N)
+Locality budget: Path A = 1 shared per-token scalar (c_i, the divisive-normalization pool); Path B = 2 shared states (S, u).
